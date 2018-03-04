@@ -1,0 +1,15 @@
+{
+  "name": "tests",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "test": "mocha"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "async_hooks": "^1.0.0",
+    "mocha": "^5.0.1",
+    "pg": "^7.4.1",
+    "sequelize": "^4.33.3"
+  }
+}
