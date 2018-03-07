@@ -6,6 +6,10 @@ function PgBlitzMetrics() {
 PgBlitzMetrics.prototype.start = function (metricName) {
   var metrics = this.metrics
   return function (r) {
+    if (!PgBlitz._useMetrics){
+      return r
+    }
+    console.log("Start metric: ", metricName)
     metrics[metricName] = new Date().getTime()
     return Promise.resolve(r)
   }
@@ -14,6 +18,9 @@ PgBlitzMetrics.prototype.start = function (metricName) {
 PgBlitzMetrics.prototype.end = function (metricName) {
   var metrics = this.metrics
   return function (r) {
+    if (!PgBlitz._useMetrics){
+      return r
+    }
     var start = metrics[metricName]
     delete metrics[metricName]
     console.log("METRIC: " + metricName + " => " + (new Date().getTime() - start))
@@ -21,31 +28,67 @@ PgBlitzMetrics.prototype.end = function (metricName) {
   }
 }
 
-var PgBlitz = function () {
+PgBlitzMetrics.prototype.of = function (funcPromise, metricName) {
+  var self = this
+  if (!PgBlitz._useMetrics){
+    return funcPromise
+  }
+  return function (r) {
+    return self.start(metricName)(r).then(funcPromise).then(self.end(metricName))
+  }
 }
 
-PgBlitz._useMetrics = false
-
-PgBlitz.prototype.loader = function (loaderFunction) {
-  this._loaderFunction = loaderFunction;
+function DatasetSchema(datasetName, loaderFunction){
+  this._loaderFunction = loaderFunction
+  this._datasetName = 'pgblitz_dataset_' + datasetName
 }
 
-
-PgBlitz.prototype.load = function (pgClient) {
+DatasetSchema.prototype._initialize = function (client){
+  if (this._initializePromise) {
+    return this._initializePromise
+  }
   var metrics = new PgBlitzMetrics()
-  pgClient._schema = makeid()
-  return this._schemaInit(pgClient)
-    .then(metrics.of(function () {
-      return pgClient.query("drop schema if exists " + pgClient._schema + " cascade")
-    }, "LOADING_DROP_SCHEMA_METRIC"))
+  var loaderFunction = this._loaderFunction
+  var datasetName = this._datasetName
+  this._initializePromise = new Promise(function (resolve, reject) {
+    return metrics.of(function () {
+      return client.query("drop schema if exists " + datasetName + " cascade")
+    }, "DROP_DATA_SCHEMA_METRIC")()
 
+      .then(metrics.of(function () {
+        return client.query("create schema " + datasetName)
+      }, "CREATE_DATA_SCHEMA_METRIC"))
+
+      .then(metrics.of(function () {
+        return client.query("set search_path to " + datasetName)
+      }, "SEARCH_PATH_DATA_SCHEMA_METRIC"))
+
+      .then(metrics.of(function () {
+        return loaderFunction(client)
+      }, "LOADER_DATA_SCHEMA_METRIC"))
+
+      .then(metrics.of(function () {
+        return client.query(CLONE_SCHEMA_FUNCTION)
+      }, "CLONE_SCHEMA_FUNCTION_METRIC"))
+
+      .then(resolve, reject)
+  })
+  return this._initializePromise
+}
+
+DatasetSchema.prototype.getInstance = function (pgClient) {
+  var metrics = new PgBlitzMetrics()
+  var datasetName = this._datasetName
+  pgClient.__pgBlitzDataset = datasetName + '_instance_' + makeid()
+  return this._initialize(pgClient).then(metrics.of(function () {
+    return pgClient.query("drop schema if exists " + pgClient.__pgBlitzDataset + " cascade")
+  }, "LOADING_DROP_SCHEMA_METRIC"))
     .then(metrics.of(function () {
-      console.log(pgClient._schema)
-      return pgClient.query("select pgblitzdata.clone_schema('pgblitzdata', '" + pgClient._schema + "')")
+      return pgClient.query("select " + datasetName + ".clone_schema('" + datasetName + "', '" + pgClient.__pgBlitzDataset + "')")
     }, "LOADING_CLONE_DATA_METRIC"))
 
     .then(metrics.of(function () {
-      return pgClient.query("set search_path to " + pgClient._schema)
+      return pgClient.query("set search_path to " + pgClient.__pgBlitzDataset)
     }, "LOADING_SET_SEARCH_PATH_METRIC"))
 
     .then(function () {
@@ -53,45 +96,26 @@ PgBlitz.prototype.load = function (pgClient) {
     })
 }
 
-
-PgBlitzMetrics.prototype.of = function (funcPromise, metricName) {
-  var metrics = this.metrics
-  var self = this
-  return function (r) {
-    return self.start(metricName)().then(funcPromise).then(self.end(metricName))
-  }
+var PgBlitz = function () {
+  this._loadedDatasets = {}
 }
 
-PgBlitz.prototype._schemaInit = function (client) {
-  var loaderFunction = this._loaderFunction
-  var metrics = new PgBlitzMetrics()
-  if (!this._schemaInitializePromise) {
-    this._schemaInitializePromise = new Promise(function (resolve, reject) {
-      return metrics.of(function () {
-        client.query("drop schema pgblitzdata cascade")
-      }, "DROP_DATA_SCHEMA_METRIC")()
+PgBlitz._useMetrics = false
 
-        .then(metrics.of(function () {
-          return client.query("create schema pgblitzdata")
-        }, "CREATE_DATA_SCHEMA_METRIC"))
-
-        .then(metrics.of(function () {
-          return client.query("set search_path to pgblitzdata")
-        }, "SEARCH_PATH_DATA_SCHEMA_METRIC"))
-
-        .then(metrics.of(function () {
-          return loaderFunction(client)
-        }, "LOADER_DATA_SCHEMA_METRIC"))
-
-        .then(metrics.of(function () {
-          return client.query(CLONE_SCHEMA_FUNCTION)
-        }, "CLONE_SCHEMA_FUNCTION_METRIC"))
-
-        .then(resolve, reject)
-    })
-  }
-  return this._schemaInitializePromise
+PgBlitz.prototype.registerDataset = function (datasetName, loaderFunction) {
+  this._loadedDatasets[datasetName] = new DatasetSchema(datasetName, loaderFunction);
 }
+
+
+PgBlitz.prototype.getDatasetInstance = function (datasetName, pgClient) {
+  if (!this._loadedDatasets[datasetName]) {
+    throw new Error("Dataset: " + datasetName + " not registered. Register a dataset first")
+  }
+  return this._loadedDatasets[datasetName].getInstance(pgClient)
+}
+
+
+
 
 function makeid() {
   var text = "";
@@ -103,7 +127,6 @@ function makeid() {
   return text;
 }
 
-console.log(makeid());
 
 module.exports = PgBlitz
 
