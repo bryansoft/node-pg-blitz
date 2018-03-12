@@ -2,7 +2,8 @@
   "name": "node-pg-blitz",
   "version": "0.0.0",
   "dependencies": {
-    "pg": "^7.4.1",
+    "continuation-local-storage": "^3.2.1",
+    "pg": "^7.4.1"
   },
   "devDependencies": {}
 }
