@@ -27,30 +27,29 @@ module.exports = {
 var pgQuery = null
 function attach() {
   const Client = require('pg').Client
-  logger.debug(Client.prototype.query)
   pgQuery = pgQuery || Client.prototype.query
 
   if (Client.prototype.query !== interceptor) {
-    logger.debug('attaching to pg client query')
+    // logger.debug('attaching to pg client query')
   }
   Client.prototype.query = interceptor
 }
 
 function detach() {
   if (Client.prototype.query !== interceptor) {
-    logger.debug('detaching from pg client query')
+    // logger.debug('detaching from pg client query')
   }
   Client.prototype.query = pgQuery || Client.prototype.query
 }
 
 function interceptor() {
-  logger.debug("HERE HERE")
   var args = arguments
+  // logger.debug("Intercepting query: ", args)
   var client = this
   function originalQuery() {
     return pgQuery.apply(client, args)
   }
-  logger.debug("executing query: ", arguments)
+  // logger.debug("executing query: ", arguments)
   return onIntercept(client)
     .then(originalQuery)
 }
@@ -63,6 +62,6 @@ function onIntercept(client) {
       return promise
     }
   }
-  logger.debug("No interception on postgres query")
+  // logger.debug("No interception on postgres query")
   return Promise.resolve()
 }

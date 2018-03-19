@@ -5376,11 +5376,16 @@ module.exports = function (pgClient) {
       })
     })
     .then(function () {
+      return pgClient.query('BEGIN TRANSACTION')
+    })
+    .then(function () {
       var promises = []
+      console.log("Loading cities")
       for (var i = 0; i < cities.length; i++) {
         promises.push(pgClient.query('INSERT INTO city (id, name, countrycode, district, population) VALUES ($1, $2, $3, $4, $5)', cities[i]))
       }
       return Promise.all(promises).then(function () {
+        console.log("Cities loaded!")
         return true;
       })
     })
@@ -5401,5 +5406,8 @@ module.exports = function (pgClient) {
       return Promise.all(promises).then(function () {
         return true;
       })
+    })
+    .then(function (){
+      return pgClient.query('COMMIT TRANSACTION')
     })
 }

@@ -29,6 +29,7 @@ describe("Just some sanity tests", function() {
 
   it("should work", function(){
     return datasets.cities.use(function () {
+      console.log("Starting tests!")
       var firstStart = new Date().getTime()
       return pool.connect()
         .then(function (client) {
@@ -55,6 +56,33 @@ describe("Just some sanity tests", function() {
           console.log("ERROR", err)
         })
     })
+  });
+
+  it("performance check of loading without node-pg-blitz", function(){
+    var firstStart
+    return pool.connect()
+      .then(function (c){
+        firstStart = new Date().getTime()
+        return c.query("drop schema if exists standard_perf_check cascade")
+          .then(function () {
+            return c.query("create schema standard_perf_check")
+          })
+          .then(function () {
+            return c.query("set search_path to standard_perf_check")
+          })
+          .then(function () {
+            return require('../cities-data-loader')(c)
+          })
+          .then(function () {
+            console.log("Standard load performance", new Date().getTime() - firstStart)
+          })
+          .then(function(){
+            c.release()
+          }, function (e) {
+            c.release()
+            throw e
+          })
+      })
   });
 
   // for (var i = 0; i < 10; i++) {

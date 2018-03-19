@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "test": "mocha"
+    "install": "npm install ../node-pg-blitz",
+    "test": "npm run install && mocha tests --no-timeouts"
   },
   "dependencies": {},
   "devDependencies": {
